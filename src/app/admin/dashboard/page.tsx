@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import AdminNav from "@/components/AdminNav";
 import Navbar from "@/components/Navbar";
 import { getSupabaseBrowserClient } from "@/utils/supabase";
 
@@ -145,6 +146,8 @@ export default function AdminDashboardPage() {
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-xs font-medium text-emerald-600"><span className="h-2 w-2 rounded-full bg-emerald-400" />已通过身份验证</span>
             </div>
+
+            <AdminNav />
 
             <div className="mt-10 grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl bg-slate-50 p-5"><p className="text-xs text-slate-400">留言总数</p><p className="mt-2 text-2xl font-semibold text-slate-700">{isLoading ? "…" : messages.length}</p></div>
