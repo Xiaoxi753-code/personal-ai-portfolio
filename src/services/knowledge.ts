@@ -14,6 +14,8 @@ export type CreateKnowledgeInput = Pick<
   "title" | "category" | "content"
 >;
 
+export type UpdateKnowledgeInput = CreateKnowledgeInput;
+
 const KNOWLEDGE_FIELDS =
   "id, title, category, content, is_active, created_at";
 
@@ -43,4 +45,52 @@ export async function createKnowledgeRecord(
 
   if (error) throw error;
   return data as KnowledgeRecord;
+}
+
+export async function updateKnowledgeStatus(
+  client: SupabaseClient,
+  id: number,
+  isActive: boolean,
+) {
+  const { data, error } = await client
+    .from("knowledge")
+    .update({ is_active: isActive })
+    .eq("id", id)
+    .select(KNOWLEDGE_FIELDS)
+    .single();
+
+  if (error) throw error;
+  return data as KnowledgeRecord;
+}
+
+export async function updateKnowledgeContent(
+  client: SupabaseClient,
+  id: number,
+  input: UpdateKnowledgeInput,
+) {
+  const { data, error } = await client
+    .from("knowledge")
+    .update({
+      title: input.title.trim(),
+      category: input.category.trim(),
+      content: input.content.trim(),
+    })
+    .eq("id", id)
+    .select(KNOWLEDGE_FIELDS)
+    .single();
+
+  if (error) throw error;
+  return data as KnowledgeRecord;
+}
+
+export async function deleteKnowledgeRecord(client: SupabaseClient, id: number) {
+  const { data, error } = await client
+    .from("knowledge")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return data.id;
 }

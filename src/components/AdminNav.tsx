@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const adminNavigation = [
   { href: "/admin/dashboard", label: "留言管理" },
   { href: "/admin/knowledge", label: "AI 知识库" },
+  { href: "/admin/projects", label: "项目管理" },
 ];
 
 export default function AdminNav() {

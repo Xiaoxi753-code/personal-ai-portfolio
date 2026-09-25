@@ -5,8 +5,11 @@ import AdminNav from "@/components/AdminNav";
 import Navbar from "@/components/Navbar";
 import {
   createKnowledgeRecord,
+  deleteKnowledgeRecord,
   listKnowledgeRecords,
   type KnowledgeRecord,
+  updateKnowledgeContent,
+  updateKnowledgeStatus,
 } from "@/services/knowledge";
 import { getSupabaseBrowserClient } from "@/utils/supabase";
 
@@ -29,10 +32,17 @@ export default function AdminKnowledgePage() {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("");
   const [content, setContent] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    id: number;
+    type: "toggle" | "delete";
+  } | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [actionSuccess, setActionSuccess] = useState("");
 
   const loadKnowledge = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
@@ -64,9 +74,32 @@ export default function AdminKnowledgePage() {
     return () => window.clearTimeout(initialLoadTimer);
   }, [loadKnowledge]);
 
+  function resetForm() {
+    setTitle("");
+    setCategory("");
+    setContent("");
+    setEditingId(null);
+    setErrorMessage("");
+    setSuccessMessage("");
+    setActionError("");
+    setActionSuccess("");
+  }
+
+  function startEditing(record: KnowledgeRecord) {
+    if (isSubmitting || pendingAction || editingId !== null) return;
+    setEditingId(record.id);
+    setTitle(record.title);
+    setCategory(record.category);
+    setContent(record.content);
+    setErrorMessage("");
+    setSuccessMessage("");
+    setActionError("");
+    setActionSuccess(`正在编辑「${record.title}」。`);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || pendingAction) return;
 
     const cleanTitle = title.trim();
     const cleanCategory = category.trim();
@@ -80,7 +113,7 @@ export default function AdminKnowledgePage() {
 
     const supabase = getSupabaseBrowserClient();
     if (!supabase) {
-      setErrorMessage("数据库服务尚未配置，暂时无法新增资料。");
+      setErrorMessage(`数据库服务尚未配置，暂时无法${editingId === null ? "新增" : "修改"}资料。`);
       setSuccessMessage("");
       return;
     }
@@ -90,6 +123,22 @@ export default function AdminKnowledgePage() {
     setSuccessMessage("");
 
     try {
+      if (editingId !== null) {
+        const updatedRecord = await updateKnowledgeContent(supabase, editingId, {
+          title: cleanTitle,
+          category: cleanCategory,
+          content: cleanContent,
+        });
+        setRecords((currentRecords) =>
+          currentRecords.map((item) =>
+            item.id === editingId ? updatedRecord : item,
+          ),
+        );
+        resetForm();
+        setSuccessMessage(`「${updatedRecord.title}」已保存修改。`);
+        return;
+      }
+
       const newRecord = await createKnowledgeRecord(supabase, {
         title: cleanTitle,
         category: cleanCategory,
@@ -97,13 +146,11 @@ export default function AdminKnowledgePage() {
       });
 
       setRecords((currentRecords) => [newRecord, ...currentRecords]);
-      setTitle("");
-      setCategory("");
-      setContent("");
+      resetForm();
       setSuccessMessage("资料已成功加入 AI 知识库。");
     } catch (error) {
-      console.error("Failed to create knowledge record:", error);
-      setErrorMessage("新增失败，请确认已登录并已执行 knowledge 建表 SQL。");
+      console.error("Failed to save knowledge record:", error);
+      setErrorMessage(`${editingId === null ? "新增" : "修改"}失败，请确认已登录并检查网络后重试。`);
     } finally {
       setIsSubmitting(false);
     }
@@ -112,6 +159,74 @@ export default function AdminKnowledgePage() {
   function clearFeedback() {
     setErrorMessage("");
     setSuccessMessage("");
+    setActionError("");
+    setActionSuccess("");
+  }
+
+  async function handleToggle(record: KnowledgeRecord) {
+    if (pendingAction || isLoading || isSubmitting || editingId !== null) return;
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setActionError("数据库服务尚未配置，暂时无法修改状态。");
+      return;
+    }
+
+    setPendingAction({ id: record.id, type: "toggle" });
+    setActionError("");
+    setActionSuccess("");
+
+    try {
+      const updatedRecord = await updateKnowledgeStatus(
+        supabase,
+        record.id,
+        !record.is_active,
+      );
+      setRecords((currentRecords) =>
+        currentRecords.map((item) =>
+          item.id === record.id ? updatedRecord : item,
+        ),
+      );
+      setActionSuccess(
+        `「${record.title}」已${updatedRecord.is_active ? "启用" : "停用"}。`,
+      );
+    } catch (error) {
+      console.error("Failed to update knowledge status:", error);
+      setActionError("状态更新失败，请确认已登录并检查网络后重试。");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function handleDelete(record: KnowledgeRecord) {
+    if (pendingAction || isLoading || isSubmitting || editingId !== null) return;
+
+    if (!window.confirm(`确定要永久删除「${record.title}」吗？删除后无法恢复。`)) {
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      setActionError("数据库服务尚未配置，暂时无法删除资料。");
+      return;
+    }
+
+    setPendingAction({ id: record.id, type: "delete" });
+    setActionError("");
+    setActionSuccess("");
+
+    try {
+      const deletedId = await deleteKnowledgeRecord(supabase, record.id);
+      setRecords((currentRecords) =>
+        currentRecords.filter((item) => item.id !== deletedId),
+      );
+      setActionSuccess(`「${record.title}」已删除。`);
+    } catch (error) {
+      console.error("Failed to delete knowledge record:", error);
+      setActionError("删除失败，请确认已登录并检查网络后重试。");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   return (
@@ -130,7 +245,7 @@ export default function AdminKnowledgePage() {
                   AI 知识库
                 </h1>
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500 sm:text-base">
-                  在这里集中维护数字分身可以使用的公开资料。当前阶段支持读取和新增，编辑与删除将在验收后继续完成。
+                  在这里维护数字分身可以使用的公开资料。支持新增、查看、启用或停用，以及删除；停用后 AI 不会再引用该条资料。
                 </p>
               </div>
               <span className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-xs font-medium text-emerald-600">
@@ -147,11 +262,15 @@ export default function AdminKnowledgePage() {
                 className="h-fit rounded-3xl border border-indigo-100 bg-indigo-50/45 p-5 sm:p-7"
               >
                 <p className="text-xs font-semibold tracking-[0.2em] text-indigo-500 uppercase">
-                  Create
+                  {editingId === null ? "Create" : "Edit"}
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-800">新增资料</h2>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-800">
+                  {editingId === null ? "新增资料" : "编辑资料"}
+                </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  只填写愿意向访客公开，并允许数字分身引用的事实。
+                  {editingId === null
+                    ? "只填写愿意向访客公开，并允许数字分身引用的事实。"
+                    : "修改完成后保存；取消编辑会清空表单并返回新增模式。"}
                 </p>
 
                 <div className="mt-6 space-y-5">
@@ -168,7 +287,7 @@ export default function AdminKnowledgePage() {
                       }}
                       maxLength={TITLE_MAX_LENGTH}
                       placeholder="例如：我的职业定位"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || pendingAction !== null}
                       className="mt-2.5 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
                     />
                     <p className="mt-1.5 text-right text-xs text-slate-400">
@@ -189,7 +308,7 @@ export default function AdminKnowledgePage() {
                       }}
                       maxLength={CATEGORY_MAX_LENGTH}
                       placeholder="例如：经历、技能、项目"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || pendingAction !== null}
                       className="mt-2.5 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
                     />
                   </div>
@@ -208,7 +327,7 @@ export default function AdminKnowledgePage() {
                       maxLength={CONTENT_MAX_LENGTH}
                       rows={8}
                       placeholder="填写准确、可公开、可以被 AI 直接引用的资料……"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || pendingAction !== null}
                       className="mt-2.5 w-full resize-y rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
                     />
                     <p className="mt-1.5 text-right text-xs text-slate-400">
@@ -222,13 +341,27 @@ export default function AdminKnowledgePage() {
                   {successMessage ? <p className="text-emerald-600">{successMessage}</p> : null}
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="mt-3 w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-500 px-5 py-3.5 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(99,102,241,0.2)] transition hover:-translate-y-0.5 hover:from-indigo-400 hover:to-violet-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
-                >
-                  {isSubmitting ? "保存中…" : "新增资料"}
-                </button>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || pendingAction !== null}
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-500 px-5 py-3.5 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(99,102,241,0.2)] transition hover:-translate-y-0.5 hover:from-indigo-400 hover:to-violet-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                  >
+                    {isSubmitting
+                      ? "保存中…"
+                      : editingId === null ? "新增资料" : "保存修改"}
+                  </button>
+                  {editingId !== null ? (
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      disabled={isSubmitting || pendingAction !== null}
+                      className="rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-medium text-slate-600 transition hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      取消编辑
+                    </button>
+                  ) : null}
+                </div>
               </form>
 
               <section aria-labelledby="knowledge-list-title">
@@ -247,11 +380,16 @@ export default function AdminKnowledgePage() {
                   <button
                     type="button"
                     onClick={() => void loadKnowledge()}
-                    disabled={isLoading || isSubmitting}
+                    disabled={isLoading || isSubmitting || pendingAction !== null || editingId !== null}
                     className="rounded-full border border-indigo-200 px-4 py-2 text-xs font-medium text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isLoading ? "加载中…" : "刷新列表"}
                   </button>
+                </div>
+
+                <div aria-live="polite" className="mt-4 min-h-6 text-sm">
+                  {actionError ? <p className="text-rose-600">{actionError}</p> : null}
+                  {actionSuccess ? <p className="text-emerald-600">{actionSuccess}</p> : null}
                 </div>
 
                 {isLoading ? (
@@ -284,6 +422,35 @@ export default function AdminKnowledgePage() {
                         <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-600">
                           {record.content}
                         </p>
+                        <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-200/70 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => startEditing(record)}
+                            disabled={pendingAction !== null || isLoading || isSubmitting || editingId !== null}
+                            className="rounded-full border border-sky-200 px-4 py-2 text-xs font-medium text-sky-600 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {editingId === record.id ? "编辑中" : "编辑"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleToggle(record)}
+                            disabled={pendingAction !== null || isLoading || isSubmitting || editingId !== null}
+                            className="rounded-full border border-indigo-200 px-4 py-2 text-xs font-medium text-indigo-600 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {pendingAction?.id === record.id && pendingAction.type === "toggle"
+                              ? "更新中…"
+                              : record.is_active ? "停用" : "启用"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(record)}
+                            disabled={pendingAction !== null || isLoading || isSubmitting || editingId !== null}
+                            className="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {pendingAction?.id === record.id && pendingAction.type === "delete"
+                              ? "删除中…" : "删除"}
+                          </button>
+                        </div>
                       </article>
                     ))}
                   </div>
