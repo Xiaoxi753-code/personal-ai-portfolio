@@ -21,6 +21,9 @@ export function getSupabaseBrowserClient() {
   if (!browserClient) {
     browserClient = createBrowserClient(supabaseUrl, supabaseAnonKey, {
       isSingleton: true,
+      cookieOptions: {
+        secure: false,
+      },
     });
     globalForSupabase.__personalAiPortfolioSupabaseClient = browserClient;
   }
