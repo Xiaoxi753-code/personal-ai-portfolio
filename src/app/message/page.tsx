@@ -17,6 +17,9 @@ type Feedback = {
   text: string;
 } | null;
 
+const MESSAGE_COOLDOWN_MS = 60_000;
+const LAST_PUBLISHED_AT_KEY = "message-last-published-at";
+
 function formatMessageDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
@@ -39,6 +42,7 @@ export default function MessagePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   const loadMessages = useCallback(async (showLoading = true) => {
     await Promise.resolve();
@@ -81,12 +85,87 @@ export default function MessagePage() {
     return () => window.clearTimeout(initialLoadTimer);
   }, [loadMessages]);
 
+  useEffect(() => {
+    function updateCooldown() {
+      let storedValue: string | null = null;
+
+      try {
+        storedValue = window.localStorage.getItem(LAST_PUBLISHED_AT_KEY);
+      } catch (error) {
+        console.warn("Unable to read message cooldown:", error);
+        setCooldownSeconds(0);
+        return;
+      }
+
+      const lastPublishedAt = Number(storedValue);
+
+      if (!storedValue || !Number.isFinite(lastPublishedAt)) {
+        if (storedValue) {
+          try {
+            window.localStorage.removeItem(LAST_PUBLISHED_AT_KEY);
+          } catch (error) {
+            console.warn("Unable to clear invalid message cooldown:", error);
+          }
+        }
+        setCooldownSeconds(0);
+        return;
+      }
+
+      const secondsLeft = Math.max(
+        0,
+        Math.ceil(
+          (lastPublishedAt + MESSAGE_COOLDOWN_MS - Date.now()) / 1_000,
+        ),
+      );
+
+      setCooldownSeconds(secondsLeft);
+      if (secondsLeft === 0) {
+        try {
+          window.localStorage.removeItem(LAST_PUBLISHED_AT_KEY);
+        } catch (error) {
+          console.warn("Unable to clear message cooldown:", error);
+        }
+      }
+    }
+
+    updateCooldown();
+    const cooldownTimer = window.setInterval(updateCooldown, 1_000);
+
+    return () => window.clearInterval(cooldownTimer);
+  }, []);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting) return;
 
     const cleanNickname = nickname.trim();
     const cleanContent = content.trim();
+
+    let lastPublishedAt = Number.NaN;
+    try {
+      lastPublishedAt = Number(
+        window.localStorage.getItem(LAST_PUBLISHED_AT_KEY),
+      );
+    } catch (error) {
+      console.warn("Unable to read message cooldown:", error);
+    }
+    const secondsLeft = Number.isFinite(lastPublishedAt)
+      ? Math.max(
+          0,
+          Math.ceil(
+            (lastPublishedAt + MESSAGE_COOLDOWN_MS - Date.now()) / 1_000,
+          ),
+        )
+      : 0;
+
+    if (secondsLeft > 0) {
+      setCooldownSeconds(secondsLeft);
+      setFeedback({
+        type: "error",
+        text: `发布太频繁啦，请等待 ${secondsLeft} 秒后再试。`,
+      });
+      return;
+    }
 
     if (!cleanNickname || !cleanContent) {
       setFeedback({ type: "error", text: "请先填写昵称和留言内容。" });
@@ -123,6 +202,16 @@ export default function MessagePage() {
 
       if (error) throw error;
 
+      const publishedAt = Date.now();
+      try {
+        window.localStorage.setItem(
+          LAST_PUBLISHED_AT_KEY,
+          String(publishedAt),
+        );
+      } catch (error) {
+        console.warn("Unable to persist message cooldown:", error);
+      }
+      setCooldownSeconds(Math.ceil(MESSAGE_COOLDOWN_MS / 1_000));
       setNickname("");
       setContent("");
       setFeedback({ type: "success", text: "留言发布成功，谢谢你的分享！" });
@@ -216,10 +305,14 @@ export default function MessagePage() {
               </div>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || cooldownSeconds > 0}
                 className="rounded-full bg-gradient-to-r from-emerald-400 to-sky-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(16,185,129,0.2)] transition hover:-translate-y-0.5 hover:from-emerald-300 hover:to-sky-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
               >
-                {isSubmitting ? "发布中…" : "发布留言"}
+                {isSubmitting
+                  ? "发布中…"
+                  : cooldownSeconds > 0
+                    ? `请等待 ${cooldownSeconds} 秒`
+                    : "发布留言"}
               </button>
             </div>
           </form>

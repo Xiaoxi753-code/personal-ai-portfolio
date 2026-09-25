@@ -1,0 +1,11 @@
+.git
+.github
+.next
+node_modules
+npm-debug.log*
+.env*
+!.env.local.example
+.vercel
+Dockerfile
+README.md
+国内服务器迁移指南.md
