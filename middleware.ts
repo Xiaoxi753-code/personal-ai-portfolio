@@ -7,6 +7,7 @@ export async function middleware(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const protectedAdminPaths = [
     "/admin/dashboard",
+    "/admin/messages",
     "/admin/knowledge",
     "/admin/projects",
     "/admin/love",
@@ -70,6 +71,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/admin/dashboard/:path*",
+    "/admin/messages/:path*",
     "/admin/knowledge/:path*",
     "/admin/projects/:path*",
     "/admin/love/:path*",
