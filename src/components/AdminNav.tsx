@@ -7,6 +7,7 @@ const adminNavigation = [
   { href: "/admin/dashboard", label: "留言管理" },
   { href: "/admin/knowledge", label: "AI 知识库" },
   { href: "/admin/projects", label: "项目管理" },
+  { href: "/admin/love", label: "恋爱空间" },
 ];
 
 export default function AdminNav() {

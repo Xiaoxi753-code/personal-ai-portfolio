@@ -5,7 +5,12 @@ export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const protectedAdminPaths = ["/admin/dashboard", "/admin/knowledge", "/admin/projects"];
+  const protectedAdminPaths = [
+    "/admin/dashboard",
+    "/admin/knowledge",
+    "/admin/projects",
+    "/admin/love",
+  ];
   const isProtectedPath = protectedAdminPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path),
   );
@@ -63,5 +68,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/dashboard/:path*", "/admin/knowledge/:path*", "/admin/projects/:path*"],
+  matcher: [
+    "/admin/dashboard/:path*",
+    "/admin/knowledge/:path*",
+    "/admin/projects/:path*",
+    "/admin/love/:path*",
+  ],
 };
