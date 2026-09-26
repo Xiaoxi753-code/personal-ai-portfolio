@@ -10,6 +10,17 @@ function fileExtension(file: File) {
   return safeExtension || "image";
 }
 
+export function createUploadId() {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2)}`;
+}
+
 export async function uploadLoveImages(
   client: SupabaseClient,
   files: File[],
@@ -19,7 +30,7 @@ export async function uploadLoveImages(
   const folder = new Date().toISOString().slice(0, 7);
 
   for (const [index, file] of files.entries()) {
-    const path = `moments/${folder}/${crypto.randomUUID()}.${fileExtension(file)}`;
+    const path = `moments/${folder}/${createUploadId()}.${fileExtension(file)}`;
     const { error } = await client.storage
       .from(LOVE_IMAGES_BUCKET)
       .upload(path, file, {
